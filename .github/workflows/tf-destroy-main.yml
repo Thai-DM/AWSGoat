@@ -28,7 +28,6 @@ jobs:
         shell: bash
 
     steps:
-    # Checkout the repository to the GitHub Actions runner
     - name: Checkout
       uses: actions/checkout@v4
 
@@ -38,24 +37,30 @@ jobs:
         terraform_version: 1.10.5
     
     - name: Set Account ID
-      id: account
       run: |
         echo "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
 
-    # Copy and delete terraform.tfstate files from s3 bucket
-    - name: Retrieve tfstate
+    # 🔥 SAFE retrieve tfstate (KHÔNG FAIL nếu không tồn tại)
+    - name: Retrieve tfstate (safe)
       run: |
         cd modules/${{ github.event.inputs.module }}
-        aws s3 cp s3://do-not-delete-awsgoat-state-files-${{ env.ACCOUNT_ID }}/terraform.tfstate ./terraform.tfstate
+        if aws s3 ls s3://do-not-delete-awsgoat-state-files-${{ env.ACCOUNT_ID }}/terraform.tfstate ; then
+          echo "State found. Downloading..."
+          aws s3 cp s3://do-not-delete-awsgoat-state-files-${{ env.ACCOUNT_ID }}/terraform.tfstate ./terraform.tfstate
+        else
+          echo "No terraform state found. Nothing to destroy."
+        fi
 
-    # Initialize a new Terraform working directory
     - name: Terraform Init
       run: |
         cd modules/${{ github.event.inputs.module }}
         terraform init
-    
+
     - name: Terraform Destroy
       run: |
         cd modules/${{ github.event.inputs.module }}
-        terraform destroy -auto-approve -input=false
-      continue-on-error: false
+        if [ -f terraform.tfstate ]; then
+          terraform destroy -auto-approve -input=false
+        else
+          echo "No state file. Skipping destroy."
+        fi
