@@ -7,60 +7,46 @@ on:
         type: choice
         description: "Select which module to destroy"
         options: 
-        - module-1
-        - module-2
+          - module-1
+          - module-2
         required: true
 
 permissions: write-all
 
 jobs:
   terraform:
-    name: 'Terraform'
+    name: 'Terraform Destroy'
     runs-on: ubuntu-latest
     environment: production
+
     env: 
       AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-      AWS_REGION: "us-east-1"
+      AWS_REGION: us-east-1
 
     defaults:
       run:
         shell: bash
 
     steps:
+    # 1️⃣ Checkout source
     - name: Checkout
       uses: actions/checkout@v4
 
+    # 2️⃣ Setup Terraform
     - name: Set up Terraform
       uses: hashicorp/setup-terraform@v2
       with:
         terraform_version: 1.10.5
-    
-    - name: Set Account ID
-      run: |
-        echo "ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)" >> $GITHUB_ENV
 
-    # 🔥 SAFE retrieve tfstate (KHÔNG FAIL nếu không tồn tại)
-    - name: Retrieve tfstate (safe)
-      run: |
-        cd modules/${{ github.event.inputs.module }}
-        if aws s3 ls s3://do-not-delete-awsgoat-state-files-${{ env.ACCOUNT_ID }}/terraform.tfstate ; then
-          echo "State found. Downloading..."
-          aws s3 cp s3://do-not-delete-awsgoat-state-files-${{ env.ACCOUNT_ID }}/terraform.tfstate ./terraform.tfstate
-        else
-          echo "No terraform state found. Nothing to destroy."
-        fi
-
+    # 3️⃣ Terraform Init (load backend S3 state)
     - name: Terraform Init
       run: |
         cd modules/${{ github.event.inputs.module }}
         terraform init
 
+    # 4️⃣ Terraform Destroy
     - name: Terraform Destroy
       run: |
         cd modules/${{ github.event.inputs.module }}
-        if [ -f terraform.tfstate ]; then
-          terraform destroy -auto-approve -input=false
-        else
-          echo "No state file. Skipping destroy."
-        fi
+        terraform destroy -auto-approve -input=false
